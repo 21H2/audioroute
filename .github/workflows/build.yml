@@ -1,13 +1,18 @@
-name: Build Android
+name: Build & Release Android
 
-# Build a release APK and AAB on every push (and on demand).
+# On every push: bump the version, build, commit the bump back, and publish
+# a GitHub Release with an installable APK (+ AAB).
 on:
   push:
   workflow_dispatch:
 
+# Needed to push the version-bump commit and create tags/releases.
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: APK + AAB
+    name: Bump + Build + Release
     runs-on: ubuntu-latest
 
     steps:
@@ -41,25 +46,70 @@ jobs:
             chmod +x android/gradlew
           fi
 
+      # Read major.minor.patch+build from pubspec, bump patch AND build by one.
+      # e.g. 1.0.0+1  ->  1.0.1+2  (versionName 1.0.1, versionCode 2)
+      - name: Bump version
+        id: version
+        run: |
+          CURRENT=$(grep '^version:' pubspec.yaml | sed 's/version://; s/[[:space:]]//g')
+          NAME=${CURRENT%%+*}
+          BUILD=${CURRENT##*+}
+          MAJOR=$(echo "$NAME" | cut -d. -f1)
+          MINOR=$(echo "$NAME" | cut -d. -f2)
+          PATCH=$(echo "$NAME" | cut -d. -f3)
+          NEW_NAME="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          NEW_BUILD=$((BUILD + 1))
+          NEW_VERSION="${NEW_NAME}+${NEW_BUILD}"
+          sed -i "s/^version:.*/version: ${NEW_VERSION}/" pubspec.yaml
+          echo "name=${NEW_NAME}" >> "$GITHUB_OUTPUT"
+          echo "code=${NEW_BUILD}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${NEW_VERSION}"
+
       - name: Install dependencies
         run: flutter pub get
 
+      # Universal (fat) APK — single file that installs on any phone/ABI.
       - name: Build release APK
         run: flutter build apk --release
 
       - name: Build release AAB
         run: flutter build appbundle --release
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: audioroute-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+      # Friendly, version-stamped file names for the release page.
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "dist/audioroute-${{ steps.version.outputs.name }}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab \
+            "dist/audioroute-${{ steps.version.outputs.name }}.aab"
 
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
+      # Commit the bumped pubspec back. [skip ci] stops it re-triggering us.
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "ci: bump version to ${{ steps.version.outputs.name }}+${{ steps.version.outputs.code }} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: audioroute-aab
-          path: build/app/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.ref_name }}
+          name: AudioRoute ${{ steps.version.outputs.name }}
+          body: |
+            📲 **Install:** download the `.apk` below on your phone and tap it.
+            (Allow "install unknown apps" for your browser if prompted.)
+
+            - **versionName:** `${{ steps.version.outputs.name }}`
+            - **versionCode:** `${{ steps.version.outputs.code }}`
+            - **commit:** ${{ github.sha }}
+
+            > Debug-signed: the APK installs directly; the AAB is for future Play upload.
+          files: |
+            dist/audioroute-${{ steps.version.outputs.name }}.apk
+            dist/audioroute-${{ steps.version.outputs.name }}.aab
+          fail_on_unmatched_files: true

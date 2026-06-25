@@ -80,6 +80,20 @@ Then re-run `flutter pub get && flutter run`.
 > Tip: test on a **physical phone**. Emulators usually don't model a real
 > earpiece, so the routing difference is hard to hear.
 
+## Get it on your phone (no toolchain needed)
+
+Every push auto-bumps the version and publishes a **GitHub Release** with an
+installable APK:
+
+1. Go to the repo's **Releases** page.
+2. On your Android phone, open the latest release and download
+   `audioroute-<version>.apk`.
+3. Tap the downloaded file and confirm — allow "install unknown apps" for your
+   browser if prompted.
+
+The release APK is a universal (all-ABI) build, so it installs on any phone.
+It's debug-signed: great for sideloading, not yet ready for Play Store upload.
+
 ## Notes & next steps
 
 - `minSdk` is **26** (lets the launcher icon stay pure-XML; routing needs 31+

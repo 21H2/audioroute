@@ -4,15 +4,6 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
-def localProperties = new Properties()
-def localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withReader("UTF-8") { reader -> localProperties.load(reader) }
-}
-
-def flutterVersionCode = localProperties.getProperty("flutter.versionCode") ?: "1"
-def flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0"
-
 android {
     namespace = "com.example.audioroute"
     compileSdk = 36
@@ -34,8 +25,10 @@ android {
         // XML-only adaptive launcher icons (no binary PNG assets required).
         minSdk = 26
         targetSdk = 36
-        versionCode = flutterVersionCode.toInteger()
-        versionName = flutterVersionName
+        // Driven by `flutter build --build-number=.. --build-name=..` in CI;
+        // falls back to the `version:` field in pubspec.yaml locally.
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     buildTypes {
