@@ -6,7 +6,8 @@
     android:viewportHeight="108">
     <!-- Phone handset glyph, scaled into the adaptive-icon safe zone. -->
     <group
-        android:scale="2.2"
+        android:scaleX="2.2"
+        android:scaleY="2.2"
         android:translateX="27"
         android:translateY="27">
         <path
