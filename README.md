@@ -1,0 +1,89 @@
+# AudioRoute
+
+Listen to your own music through the phone's **front earpiece** instead of the
+loudspeaker — so it looks like you're on a call, but you're actually playing a
+track. Built with **Flutter**, **Material You** dynamic theming, and a custom
+native audio-routing channel.
+
+## Why Flutter (vs. React Native)
+
+- **Audio routing** is the core feature and needs native code either way.
+  Flutter's `just_audio` exposes Android `AudioAttributes` directly
+  (`setAndroidAudioAttributes`), and `audio_session` wraps focus/mode cleanly —
+  far less native glue than RN's fragmented audio packages.
+- **Material You** is first-class via `dynamic_color` (real wallpaper-derived
+  palette on Android 12+); RN relies on lagging third-party bridges.
+- One language for both UI and the platform channel.
+
+## How the "music on the earpiece" trick works
+
+Two halves, both required:
+
+1. **Native (`MainActivity.kt`)** puts the device into
+   `MODE_IN_COMMUNICATION` and selects the **built-in earpiece** as the active
+   communication device (`setCommunicationDevice` on API 31+, the
+   `isSpeakerphoneOn` flag on older devices).
+2. **Player (`PlayerController._applyAttributes`)** tags playback with
+   `AndroidAudioUsage.voiceCommunication` so the OS routes it like call audio.
+
+Toggle to **Speaker** and it flips back to `media` usage + `MODE_NORMAL` —
+ordinary system audio out the loudspeaker.
+
+## Features
+
+- Fake **call screen** UI: avatar, call timer, mute / speaker / library /
+  rewind / play-hold / forward controls, and a red **End Call** button.
+- **Import** any local audio files (`file_picker`) into a "contacts" library.
+- One-tap **earpiece ↔ speaker** routing.
+- Material You dynamic color (falls back to a seeded purple scheme).
+
+## Project layout
+
+```
+lib/
+  main.dart                     # app + DynamicColorBuilder + Provider
+  theme.dart                    # Material 3 theme from a ColorScheme
+  models/track.dart
+  services/audio_router.dart    # method channel + audio_session
+  services/player_controller.dart  # state, just_audio, import
+  screens/call_screen.dart      # the disguised-call home screen
+  screens/library_screen.dart   # imported tracks
+android/app/src/main/kotlin/com/example/audioroute/MainActivity.kt
+```
+
+## Build & run
+
+Requires the Flutter SDK (3.24+) and an Android toolchain.
+
+```bash
+cd audioroute
+flutter pub get
+flutter run            # on a connected device or emulator
+```
+
+### One-time note about the Gradle wrapper
+
+This scaffold ships the Gradle config but **not** the binary
+`gradle-wrapper.jar` (it can't be authored as text). If `flutter run` complains
+that the wrapper is missing, regenerate the Android tooling without touching the
+app code:
+
+```bash
+# Generates the Gradle wrapper + any missing platform files.
+# It will NOT overwrite lib/, pubspec.yaml, or your customized
+# MainActivity.kt / AndroidManifest.xml.
+flutter create --platforms=android .
+```
+
+Then re-run `flutter pub get && flutter run`.
+
+> Tip: test on a **physical phone**. Emulators usually don't model a real
+> earpiece, so the routing difference is hard to hear.
+
+## Notes & next steps
+
+- `minSdk` is **26** (lets the launcher icon stay pure-XML; routing needs 31+
+  for the modern API, with a legacy fallback below that).
+- The earpiece is intentionally quiet — hold the phone to your ear like a call.
+- Ideas to extend: proximity-sensor screen-off (true call feel), background
+  playback via `just_audio_background`, album-art metadata via `on_audio_query`.

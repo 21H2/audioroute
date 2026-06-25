@@ -1,0 +1,34 @@
+name: audioroute
+description: "Route your own music through the front earpiece — like you're on a call, but it's music."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  # Flutter 3.27+ for the Color.withValues / Material 3 surface roles used in the UI.
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Local file playback (ExoPlayer under the hood, exposes Android audio attrs).
+  just_audio: ^0.9.42
+  # Audio focus + session configuration.
+  audio_session: ^0.1.21
+  # Pick local audio files to import.
+  file_picker: ^8.1.6
+  # Material You dynamic color from the device wallpaper (Android 12+).
+  dynamic_color: ^1.7.0
+  # Lightweight state management.
+  provider: ^6.1.2
+  # Path helpers for deriving track titles.
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
