@@ -15,7 +15,7 @@ def flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "
 
 android {
     namespace = "com.example.audioroute"
-    compileSdk = 34
+    compileSdk = 35
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -31,7 +31,7 @@ android {
         // setCommunicationDevice() needs API 31; minSdk 26 lets us use
         // XML-only adaptive launcher icons (no binary PNG assets required).
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
     }
