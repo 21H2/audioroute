@@ -161,6 +161,9 @@ class _StatusLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Copy to a local so Dart can promote it to non-null after the check
+    // (public fields aren't promotable).
+    final track = this.track;
     final controller = context.watch<PlayerController>();
     final route = controller.output == AudioOutput.earpiece
         ? 'earpiece'
