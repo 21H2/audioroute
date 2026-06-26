@@ -2,16 +2,19 @@ import 'package:audio_session/audio_session.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/track.dart';
 import 'audio_router.dart';
+import 'metadata_service.dart';
 
 /// Central app state: the library of imported tracks, the active "call",
 /// playback transport, and the chosen audio output route.
 class PlayerController extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   final AudioRouter _router = AudioRouter();
+  final MetadataService _meta = MetadataService();
 
   final List<Track> tracks = <Track>[];
 
@@ -42,6 +45,7 @@ class PlayerController extends ChangeNotifier {
         _player.seek(Duration.zero);
         _player.pause();
       }
+      _updateProximity();
       notifyListeners();
     });
   }
@@ -54,13 +58,25 @@ class PlayerController extends ChangeNotifier {
     );
     if (result == null) return;
 
+    final added = <Track>[];
     for (final file in result.files) {
       final path = file.path;
       if (path == null) continue;
       if (tracks.any((t) => t.path == path)) continue;
-      tracks.add(Track(title: _titleFromPath(path), path: path));
+      final track = Track(title: _titleFromPath(path), path: path);
+      tracks.add(track);
+      added.add(track);
     }
     notifyListeners();
+
+    // Enrich with artist + album art in the background.
+    for (final track in added) {
+      final meta = await _meta.lookup(track.path);
+      track.artist = meta.artist ?? track.artist;
+      track.artwork = meta.artwork;
+      track.artUri = meta.artUri;
+      notifyListeners();
+    }
   }
 
   String _titleFromPath(String path) {
@@ -74,11 +90,22 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
     try {
       await _applyAttributes();
-      await _player.setFilePath(track.path);
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.file(track.path),
+          tag: MediaItem(
+            id: track.path,
+            title: track.title,
+            artist: track.artist ?? 'AudioRoute',
+            artUri: track.artUri,
+          ),
+        ),
+      );
       await _player.play();
     } catch (e) {
       debugPrint('PlayerController.play failed: $e');
     }
+    _updateProximity();
     notifyListeners();
   }
 
@@ -91,6 +118,7 @@ class PlayerController extends ChangeNotifier {
     } else {
       await _player.play();
     }
+    _updateProximity();
     notifyListeners();
   }
 
@@ -115,6 +143,7 @@ class PlayerController extends ChangeNotifier {
     _output = output;
     await _router.applyOutput(output);
     await _applyAttributes();
+    _updateProximity();
     notifyListeners();
   }
 
@@ -142,9 +171,20 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  /// Blank the screen via the proximity sensor only while we're actually
+  /// "on a call" — i.e. playing through the earpiece.
+  void _updateProximity() {
+    if (_player.playing && _output == AudioOutput.earpiece) {
+      _router.startProximity();
+    } else {
+      _router.stopProximity();
+    }
+  }
+
   /// "End call" — stop playback and restore normal device audio mode.
   Future<void> endCall() async {
     await _player.stop();
+    await _router.stopProximity();
     await _router.reset();
     _current = null;
     notifyListeners();

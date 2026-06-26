@@ -31,9 +31,16 @@ ordinary system audio out the loudspeaker.
 
 ## Features
 
-- Fake **call screen** UI: avatar, call timer, mute / speaker / library /
+- iOS-style **call screen**: album-art backdrop (blurred), crisp artwork
+  centerpiece, live call timer, frosted-glass mute / speaker / library /
   rewind / play-hold / forward controls, and a red **End Call** button.
 - **Import** any local audio files (`file_picker`) into a "contacts" library.
+- **Album art + artist** pulled from the device media library (`on_audio_query`)
+  and shown both in-app and on the media notification.
+- **Background playback** with lock-screen / notification controls
+  (`just_audio_background`).
+- **Proximity screen-off**: while playing through the earpiece, holding the
+  phone to your ear blanks the screen — just like a real call.
 - One-tap **earpiece ↔ speaker** routing.
 - Material You dynamic color (falls back to a seeded purple scheme).
 

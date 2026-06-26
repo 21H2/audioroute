@@ -58,4 +58,22 @@ class AudioRouter {
       debugPrint('AudioRouter.reset failed: $e');
     }
   }
+
+  /// Hold a proximity wake lock so the screen blanks when the phone is at the
+  /// ear — exactly how a real phone call behaves.
+  Future<void> startProximity() async {
+    try {
+      await _channel.invokeMethod<bool>('startProximity');
+    } catch (e) {
+      debugPrint('AudioRouter.startProximity failed: $e');
+    }
+  }
+
+  Future<void> stopProximity() async {
+    try {
+      await _channel.invokeMethod<bool>('stopProximity');
+    } catch (e) {
+      debugPrint('AudioRouter.stopProximity failed: $e');
+    }
+  }
 }

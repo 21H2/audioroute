@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/track.dart';
 import '../services/player_controller.dart';
 
 /// The "contacts" list — imported audio files you can call.
@@ -33,23 +34,19 @@ class LibraryScreen extends StatelessWidget {
                 final track = controller.tracks[index];
                 final isCurrent = controller.current?.path == track.path;
                 return ListTile(
-                  leading: CircleAvatar(
-                    radius: 26,
-                    backgroundColor: scheme.primaryContainer,
-                    child: Text(
-                      track.initial,
-                      style: TextStyle(
-                        color: scheme.onPrimaryContainer,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                  leading: _Thumb(track: track),
                   title: Text(
                     track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Text(isCurrent ? 'On call now' : 'Tap to call'),
+                  subtitle: Text(
+                    isCurrent
+                        ? 'On call now'
+                        : (track.artist ?? 'Tap to call'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   trailing: Icon(
                     isCurrent ? Icons.graphic_eq : Icons.call_outlined,
                     color: isCurrent ? scheme.primary : null,
@@ -68,6 +65,38 @@ class LibraryScreen extends StatelessWidget {
               icon: const Icon(Icons.add),
               label: const Text('Import'),
             ),
+    );
+  }
+}
+
+class _Thumb extends StatelessWidget {
+  const _Thumb({required this.track});
+  final Track track;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (track.artwork != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.memory(
+          track.artwork!,
+          width: 52,
+          height: 52,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return CircleAvatar(
+      radius: 26,
+      backgroundColor: scheme.primaryContainer,
+      child: Text(
+        track.initial,
+        style: TextStyle(
+          color: scheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

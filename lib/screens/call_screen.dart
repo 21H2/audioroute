@@ -1,131 +1,255 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
+import '../models/track.dart';
 import '../services/audio_router.dart';
 import '../services/player_controller.dart';
 import 'library_screen.dart';
 
-/// The home screen — disguised as an ongoing phone call.
+/// The home screen — disguised as an ongoing phone call, styled after iOS.
 class CallScreen extends StatelessWidget {
   const CallScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<PlayerController>();
-    final scheme = Theme.of(context).colorScheme;
     final track = controller.current;
+    final palette = _CallPalette.of(context, hasArt: track?.hasArtwork ?? false);
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.surfaceContainerHighest,
-              scheme.surface,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                _CallHeader(),
-                const SizedBox(height: 28),
-                _Avatar(initial: track?.initial ?? '♪'),
-                const SizedBox(height: 20),
-                Text(
-                  track?.title ?? 'No active call',
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  controller.output == AudioOutput.earpiece
-                      ? 'AudioRoute • earpiece'
-                      : 'AudioRoute • speaker',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 16),
-                if (track != null) const _Scrubber(),
-                const Spacer(),
-                _ControlGrid(),
-                const SizedBox(height: 24),
-                _EndCallButton(),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CallHeader extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final controller = context.watch<PlayerController>();
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.lock_outline, size: 14, color: scheme.onSurfaceVariant),
-        const SizedBox(width: 6),
-        StreamBuilder<Duration>(
-          stream: controller.positionStream,
-          builder: (context, snapshot) {
-            final pos = controller.current == null
-                ? Duration.zero
-                : (snapshot.data ?? Duration.zero);
-            return Text(
-              _formatDuration(pos),
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontFeatures: const [FontFeature.tabularFigures()],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _Backdrop(track: track, palette: palette),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 16, 28, 20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  _CallerName(track: track, palette: palette),
+                  const SizedBox(height: 8),
+                  _StatusLine(track: track, palette: palette),
+                  const Spacer(),
+                  _Artwork(track: track, palette: palette),
+                  const Spacer(),
+                  if (track != null) _Scrubber(palette: palette),
+                  const SizedBox(height: 20),
+                  _ControlGrid(palette: palette),
+                  const SizedBox(height: 28),
+                  _EndCallButton(active: track != null),
+                  const SizedBox(height: 8),
+                ],
               ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initial});
-  final String initial;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 140,
-      height: 140,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: scheme.primaryContainer,
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withValues(alpha: 0.25),
-            blurRadius: 40,
-            spreadRadius: 4,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Foreground colors adapt: white over album art, theme colors otherwise.
+class _CallPalette {
+  const _CallPalette({
+    required this.fg,
+    required this.muted,
+    required this.glass,
+    required this.glassActive,
+    required this.glassActiveIcon,
+  });
+
+  final Color fg;
+  final Color muted;
+  final Color glass;
+  final Color glassActive;
+  final Color glassActiveIcon;
+
+  factory _CallPalette.of(BuildContext context, {required bool hasArt}) {
+    final scheme = Theme.of(context).colorScheme;
+    if (hasArt) {
+      return _CallPalette(
+        fg: Colors.white,
+        muted: Colors.white70,
+        glass: Colors.white.withValues(alpha: 0.20),
+        glassActive: Colors.white,
+        glassActiveIcon: Colors.black,
+      );
+    }
+    return _CallPalette(
+      fg: scheme.onSurface,
+      muted: scheme.onSurfaceVariant,
+      glass: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+      glassActive: scheme.primary,
+      glassActiveIcon: scheme.onPrimary,
+    );
+  }
+}
+
+class _Backdrop extends StatelessWidget {
+  const _Backdrop({required this.track, required this.palette});
+  final Track? track;
+  final _CallPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (track?.artwork != null) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 38, sigmaY: 38),
+            child: Image.memory(track!.artwork!, fit: BoxFit.cover),
+          ),
+          // Darkening scrim for legibility.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [scheme.surfaceContainerHighest, scheme.surface],
+        ),
+      ),
+    );
+  }
+}
+
+class _CallerName extends StatelessWidget {
+  const _CallerName({required this.track, required this.palette});
+  final Track? track;
+  final _CallPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      track?.title ?? 'No active call',
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            color: palette.fg,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.5,
+          ),
+    );
+  }
+}
+
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.track, required this.palette});
+  final Track? track;
+  final _CallPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<PlayerController>();
+    final route = controller.output == AudioOutput.earpiece
+        ? 'earpiece'
+        : 'speaker';
+
+    if (track == null) {
+      return Text('AudioRoute', style: TextStyle(color: palette.muted));
+    }
+
+    return StreamBuilder<Duration>(
+      stream: controller.positionStream,
+      builder: (context, snapshot) {
+        final pos = snapshot.data ?? Duration.zero;
+        final subtitle = track.artist == null
+            ? route
+            : '${track.artist} • $route';
+        return Column(
+          children: [
+            Text(
+              _formatDuration(pos),
+              style: TextStyle(
+                color: palette.fg,
+                fontSize: 17,
+                fontFeatures: const [ui.FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.muted, fontSize: 13),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Artwork extends StatelessWidget {
+  const _Artwork({required this.track, required this.palette});
+  final Track? track;
+  final _CallPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const size = 232.0;
+    final shadow = [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.35),
+        blurRadius: 50,
+        spreadRadius: 2,
+        offset: const Offset(0, 12),
+      ),
+    ];
+
+    if (track?.artwork != null) {
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: shadow,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: Image.memory(
+            track!.artwork!,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: scheme.primaryContainer,
+        boxShadow: shadow,
+      ),
       alignment: Alignment.center,
       child: Text(
-        initial,
+        track?.initial ?? '♪',
         style: TextStyle(
-          fontSize: 56,
+          fontSize: 84,
           fontWeight: FontWeight.w600,
           color: scheme.onPrimaryContainer,
         ),
@@ -135,12 +259,12 @@ class _Avatar extends StatelessWidget {
 }
 
 class _Scrubber extends StatelessWidget {
-  const _Scrubber();
+  const _Scrubber({required this.palette});
+  final _CallPalette palette;
 
   @override
   Widget build(BuildContext context) {
     final controller = context.read<PlayerController>();
-    final scheme = Theme.of(context).colorScheme;
 
     return StreamBuilder<Duration?>(
       stream: controller.durationStream,
@@ -151,19 +275,25 @@ class _Scrubber extends StatelessWidget {
           builder: (context, posSnap) {
             final position = posSnap.data ?? Duration.zero;
             final maxMs = duration.inMilliseconds.toDouble();
-            final value = maxMs == 0
-                ? 0.0
-                : position.inMilliseconds.clamp(0, maxMs).toDouble();
+            final value =
+                maxMs == 0 ? 0.0 : position.inMilliseconds.clamp(0, maxMs).toDouble();
             return Column(
               children: [
-                Slider(
-                  min: 0,
-                  max: maxMs == 0 ? 1 : maxMs,
-                  value: maxMs == 0 ? 0 : value,
-                  onChanged: maxMs == 0
-                      ? null
-                      : (v) =>
-                          controller.seek(Duration(milliseconds: v.round())),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: palette.fg,
+                    inactiveTrackColor: palette.fg.withValues(alpha: 0.25),
+                    thumbColor: palette.fg,
+                  ),
+                  child: Slider(
+                    min: 0,
+                    max: maxMs == 0 ? 1 : maxMs,
+                    value: maxMs == 0 ? 0 : value,
+                    onChanged: maxMs == 0
+                        ? null
+                        : (v) =>
+                            controller.seek(Duration(milliseconds: v.round())),
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -171,11 +301,9 @@ class _Scrubber extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(_formatDuration(position),
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant)),
+                          style: TextStyle(fontSize: 12, color: palette.muted)),
                       Text(_formatDuration(duration),
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant)),
+                          style: TextStyle(fontSize: 12, color: palette.muted)),
                     ],
                   ),
                 ),
@@ -189,6 +317,9 @@ class _Scrubber extends StatelessWidget {
 }
 
 class _ControlGrid extends StatelessWidget {
+  const _ControlGrid({required this.palette});
+  final _CallPalette palette;
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<PlayerController>();
@@ -199,20 +330,23 @@ class _ControlGrid extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _CallButton(
+            _GlassButton(
+              palette: palette,
               icon: controller.muted ? Icons.mic_off : Icons.mic,
-              label: 'mute',
+              label: controller.muted ? 'unmute' : 'mute',
               active: controller.muted,
               onTap: controller.toggleMute,
             ),
-            _CallButton(
-              icon: speakerOn ? Icons.volume_up : Icons.volume_up_outlined,
+            _GlassButton(
+              palette: palette,
+              icon: speakerOn ? Icons.volume_up : Icons.hearing,
               label: speakerOn ? 'speaker' : 'earpiece',
               active: speakerOn,
               onTap: controller.toggleOutput,
             ),
-            _CallButton(
-              icon: Icons.person_add_alt,
+            _GlassButton(
+              palette: palette,
+              icon: Icons.library_music,
               label: 'library',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LibraryScreen()),
@@ -220,11 +354,12 @@ class _ControlGrid extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _CallButton(
+            _GlassButton(
+              palette: palette,
               icon: Icons.replay_10,
               label: '-10s',
               onTap: () => controller.skip(const Duration(seconds: -10)),
@@ -233,14 +368,16 @@ class _ControlGrid extends StatelessWidget {
               stream: controller.playerStateStream,
               builder: (context, snapshot) {
                 final playing = snapshot.data?.playing ?? false;
-                return _CallButton(
+                return _GlassButton(
+                  palette: palette,
                   icon: playing ? Icons.pause : Icons.play_arrow,
                   label: playing ? 'hold' : 'resume',
                   onTap: controller.togglePlay,
                 );
               },
             ),
-            _CallButton(
+            _GlassButton(
+              palette: palette,
               icon: Icons.forward_10,
               label: '+10s',
               onTap: () => controller.skip(const Duration(seconds: 10)),
@@ -252,14 +389,16 @@ class _ControlGrid extends StatelessWidget {
   }
 }
 
-class _CallButton extends StatelessWidget {
-  const _CallButton({
+class _GlassButton extends StatelessWidget {
+  const _GlassButton({
+    required this.palette,
     required this.icon,
     required this.label,
     required this.onTap,
     this.active = false,
   });
 
+  final _CallPalette palette;
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -267,47 +406,52 @@ class _CallButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = active ? scheme.primary : scheme.surfaceContainerHighest;
-    final fg = active ? scheme.onPrimary : scheme.onSurface;
+    final fill = active ? palette.glassActive : palette.glass;
+    final iconColor = active ? palette.glassActiveIcon : palette.fg;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Material(
-          color: bg,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              width: 68,
-              height: 68,
-              child: Icon(icon, color: fg, size: 28),
+        ClipOval(
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Material(
+              color: fill,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: onTap,
+                child: SizedBox(
+                  width: 70,
+                  height: 70,
+                  child: Icon(icon, color: iconColor, size: 28),
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(height: 8),
-        Text(label, style: TextStyle(color: scheme.onSurfaceVariant)),
+        Text(label, style: TextStyle(color: palette.muted, fontSize: 12)),
       ],
     );
   }
 }
 
 class _EndCallButton extends StatelessWidget {
+  const _EndCallButton({required this.active});
+  final bool active;
+
   @override
   Widget build(BuildContext context) {
     final controller = context.read<PlayerController>();
-    final hasCall = context.watch<PlayerController>().current != null;
     return Material(
-      color: hasCall ? const Color(0xFFE5484D) : Colors.grey.shade400,
-      shape: const StadiumBorder(),
+      color: active ? const Color(0xFFE5484D) : const Color(0x66888888),
+      shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: hasCall ? controller.endCall : null,
+        onTap: active ? controller.endCall : null,
         child: const SizedBox(
-          width: 72,
-          height: 72,
-          child: Icon(Icons.call_end, color: Colors.white, size: 30),
+          width: 74,
+          height: 74,
+          child: Icon(Icons.call_end, color: Colors.white, size: 32),
         ),
       ),
     );

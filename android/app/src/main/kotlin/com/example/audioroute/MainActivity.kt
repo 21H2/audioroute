@@ -4,23 +4,25 @@ import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.PowerManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Bridges Flutter's [AudioRouter] to Android's [AudioManager].
+ * Bridges Flutter's [AudioRouter] to Android's [AudioManager] and [PowerManager].
  *
  * The trick: to push *media* out of the small front earpiece (instead of the
  * loudspeaker) we put the device into communication mode and pick the built-in
  * earpiece as the active communication device — exactly what a phone call does.
  *
- * The matching player-side audio attributes (voiceCommunication usage) are set
- * from Dart via just_audio's setAndroidAudioAttributes; both halves are needed.
+ * We also hold a PROXIMITY_SCREEN_OFF wake lock while "on a call" so the display
+ * blanks when the phone is against the ear, just like the real dialer.
  */
 class MainActivity : FlutterActivity() {
 
     private val channelName = "audioroute/routing"
+    private var proximityLock: PowerManager.WakeLock? = null
 
     private val audioManager: AudioManager
         get() = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -41,6 +43,14 @@ class MainActivity : FlutterActivity() {
                     }
                     "reset" -> {
                         reset()
+                        result.success(true)
+                    }
+                    "startProximity" -> {
+                        startProximity()
+                        result.success(true)
+                    }
+                    "stopProximity" -> {
+                        stopProximity()
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -75,5 +85,33 @@ class MainActivity : FlutterActivity() {
             am.isSpeakerphoneOn = false
         }
         am.mode = AudioManager.MODE_NORMAL
+    }
+
+    private fun startProximity() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+            return
+        }
+        if (proximityLock == null) {
+            proximityLock = pm.newWakeLock(
+                PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                "audioroute:proximity",
+            )
+        }
+        if (proximityLock?.isHeld == false) {
+            proximityLock?.acquire()
+        }
+    }
+
+    private fun stopProximity() {
+        if (proximityLock?.isHeld == true) {
+            // Wait for the phone to leave the ear before turning the screen back on.
+            proximityLock?.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
+        }
+    }
+
+    override fun onDestroy() {
+        stopProximity()
+        super.onDestroy()
     }
 }

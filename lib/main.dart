@@ -1,13 +1,20 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/call_screen.dart';
 import 'services/player_controller.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Enables the background foreground-service + media notification controls.
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.audioroute.playback',
+    androidNotificationChannelName: 'AudioRoute playback',
+    androidNotificationOngoing: true,
+  );
   runApp(const AudioRouteApp());
 }
 

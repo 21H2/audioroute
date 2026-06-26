@@ -14,10 +14,16 @@ dependencies:
 
   # Local file playback (ExoPlayer under the hood, exposes Android audio attrs).
   just_audio: ^0.9.42
+  # Background playback + media notification / lock-screen controls.
+  just_audio_background: ">=0.0.1-beta.11 <0.0.2"
   # Audio focus + session configuration.
   audio_session: ^0.1.21
   # Pick local audio files to import.
   file_picker: ^8.1.6
+  # Album art + track metadata from the device's media library.
+  on_audio_query: ^2.9.0
+  # Temp dir for caching artwork passed to the media notification.
+  path_provider: ^2.1.4
   # Material You dynamic color from the device wallpaper (Android 12+).
   dynamic_color: ^1.7.0
   # Lightweight state management.
