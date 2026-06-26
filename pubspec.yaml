@@ -1,7 +1,7 @@
 name: audioroute
 description: "Route your own music through the front earpiece — like you're on a call, but it's music."
 publish_to: "none"
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   # Flutter 3.27+ for the Color.withValues / Material 3 surface roles used in the UI.
