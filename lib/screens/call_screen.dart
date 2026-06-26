@@ -363,9 +363,9 @@ class _ControlGrid extends StatelessWidget {
           children: [
             _GlassButton(
               palette: palette,
-              icon: Icons.replay_10,
-              label: '-10s',
-              onTap: () => controller.skip(const Duration(seconds: -10)),
+              icon: Icons.skip_previous,
+              label: 'previous',
+              onTap: controller.previous,
             ),
             StreamBuilder<PlayerState>(
               stream: controller.playerStateStream,
@@ -381,9 +381,9 @@ class _ControlGrid extends StatelessWidget {
             ),
             _GlassButton(
               palette: palette,
-              icon: Icons.forward_10,
-              label: '+10s',
-              onTap: () => controller.skip(const Duration(seconds: 10)),
+              icon: Icons.skip_next,
+              label: 'next',
+              onTap: controller.next,
             ),
           ],
         ),

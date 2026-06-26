@@ -25,6 +25,8 @@ dependencies:
   audio_metadata_reader: ">=1.0.0 <2.0.0"
   # Temp dir for caching artwork passed to the media notification.
   path_provider: ^2.1.4
+  # All-files access so we can scan a chosen music folder on Android 11+.
+  permission_handler: ^11.3.1
   # Material You dynamic color from the device wallpaper (Android 12+).
   dynamic_color: ^1.7.0
   # Lightweight state management.

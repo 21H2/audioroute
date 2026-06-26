@@ -17,7 +17,9 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.example.audioroute.playback',
       androidNotificationChannelName: 'AudioRoute playback',
       androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
     ).timeout(const Duration(seconds: 8));
+    backgroundAudioReady = true;
   } catch (e) {
     debugPrint('JustAudioBackground.init failed/timed out: $e');
   }

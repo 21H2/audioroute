@@ -16,16 +16,30 @@ class LibraryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Library'),
+        bottom: controller.busy
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(3),
+                child: LinearProgressIndicator(minHeight: 3),
+              )
+            : null,
         actions: [
           IconButton(
-            tooltip: 'Import audio',
+            tooltip: 'Import folder',
+            icon: const Icon(Icons.create_new_folder_outlined),
+            onPressed: controller.importFolder,
+          ),
+          IconButton(
+            tooltip: 'Import files',
             icon: const Icon(Icons.library_add_outlined),
             onPressed: controller.importTracks,
           ),
         ],
       ),
       body: controller.tracks.isEmpty
-          ? _EmptyState(onImport: controller.importTracks)
+          ? _EmptyState(
+              onImportFiles: controller.importTracks,
+              onImportFolder: controller.importFolder,
+            )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: controller.tracks.length,
@@ -57,13 +71,6 @@ class LibraryScreen extends StatelessWidget {
                   },
                 );
               },
-            ),
-      floatingActionButton: controller.tracks.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: controller.importTracks,
-              icon: const Icon(Icons.add),
-              label: const Text('Import'),
             ),
     );
   }
@@ -102,9 +109,10 @@ class _Thumb extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onImport});
+  const _EmptyState({required this.onImportFiles, required this.onImportFolder});
 
-  final VoidCallback onImport;
+  final VoidCallback onImportFiles;
+  final VoidCallback onImportFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -123,16 +131,21 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Import songs from your device, then place a "call" '
-              'to listen privately through the earpiece.',
+              'Add songs or a whole folder, then place a "call" to listen.',
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: onImport,
+              onPressed: onImportFiles,
               icon: const Icon(Icons.library_add_outlined),
-              label: const Text('Import audio'),
+              label: const Text('Import files'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onImportFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: const Text('Import folder'),
             ),
           ],
         ),

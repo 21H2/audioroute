@@ -1,81 +1,187 @@
+import 'dart:io';
+
 import 'package:audio_session/audio_session.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path/path.dart' as p;
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/track.dart';
 import 'audio_router.dart';
 import 'metadata_service.dart';
 
-/// Central app state: the library of imported tracks, the active "call",
+/// Set by `main()` after attempting background-audio init. When false we add
+/// plain (untagged) sources so playback still works without the notification.
+bool backgroundAudioReady = false;
+
+const _audioExtensions = {
+  '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.wma', '.aiff',
+  '.aif', '.alac',
+};
+
+/// Central app state: the playlist of imported tracks, the active "call",
 /// playback transport, and the chosen audio output route.
 class PlayerController extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   final AudioRouter _router = AudioRouter();
   final MetadataService _meta = MetadataService();
 
+  /// The single playlist backing the player — enables next/previous,
+  /// auto-advance, and the lock-screen / notification controls.
+  final ConcatenatingAudioSource _playlist =
+      ConcatenatingAudioSource(children: []);
+  bool _sourceSet = false;
+
   final List<Track> tracks = <Track>[];
 
   Track? _current;
   Track? get current => _current;
 
-  AudioOutput _output = AudioOutput.earpiece;
+  AudioOutput _output = AudioOutput.speaker;
   AudioOutput get output => _output;
 
   bool _muted = false;
   bool get muted => _muted;
 
+  bool _busy = false;
+  bool get busy => _busy;
+
   bool get playing => _player.playing;
 
-  /// Streams the UI binds to directly (avoids rebuilding on every tick).
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
 
   Future<void> init() async {
     await _router.init();
-    // Default route is the earpiece — the whole point of the app.
-    await setOutput(AudioOutput.earpiece);
+    // Default to the loudspeaker so playback is audible out of the box;
+    // the earpiece ("on a call") effect is one tap away.
+    await setOutput(AudioOutput.speaker);
+
+    _player.currentIndexStream.listen((index) {
+      if (index != null && index >= 0 && index < tracks.length) {
+        _current = tracks[index];
+        _updateProximity();
+        notifyListeners();
+      }
+    });
 
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        // Treat end-of-track like the call winding down: rewind and pause.
-        _player.seek(Duration.zero);
+        // Reached the end of the playlist — rewind to the top and pause.
         _player.pause();
+        _player.seek(Duration.zero, index: 0);
       }
       _updateProximity();
       notifyListeners();
     });
   }
 
-  /// Let the user pick one or more local audio files to add to the library.
+  // ---- Importing -----------------------------------------------------------
+
+  /// Pick one or more individual audio files.
   Future<void> importTracks() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
       allowMultiple: true,
     );
     if (result == null) return;
+    final paths =
+        result.files.map((f) => f.path).whereType<String>().toList();
+    await _addPaths(paths);
+  }
 
-    final added = <Track>[];
-    for (final file in result.files) {
-      final path = file.path;
-      if (path == null) continue;
+  /// Pick a folder and import every audio file inside it (recursively).
+  Future<void> importFolder() async {
+    final dirPath = await FilePicker.platform.getDirectoryPath();
+    if (dirPath == null) return;
+
+    final dir = Directory(dirPath);
+    List<String>? paths = await _scanFolder(dir);
+    if (paths == null) {
+      // Reading shared storage needs all-files access on Android 11+.
+      if (Platform.isAndroid) {
+        await Permission.manageExternalStorage.request();
+      }
+      paths = await _scanFolder(dir);
+    }
+    if (paths == null) {
+      debugPrint('importFolder: could not read $dirPath');
+      return;
+    }
+    await _addPaths(paths);
+  }
+
+  Future<List<String>?> _scanFolder(Directory dir) async {
+    try {
+      final paths = <String>[];
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File && _isAudio(entity.path)) {
+          paths.add(entity.path);
+        }
+      }
+      paths.sort();
+      return paths;
+    } catch (e) {
+      debugPrint('_scanFolder failed: $e');
+      return null;
+    }
+  }
+
+  bool _isAudio(String path) =>
+      _audioExtensions.contains(p.extension(path).toLowerCase());
+
+  Future<void> _addPaths(List<String> paths) async {
+    _busy = true;
+    notifyListeners();
+    for (final path in paths) {
       if (tracks.any((t) => t.path == path)) continue;
       final track = Track(title: _titleFromPath(path), path: path);
-      tracks.add(track);
-      added.add(track);
-    }
-    notifyListeners();
 
-    // Enrich with artist + album art in the background.
-    for (final track in added) {
-      final meta = await _meta.lookup(track.path);
+      // Resolve art/artist first so the playlist + notification carry them.
+      final meta = await _meta.lookup(path);
       track.artist = meta.artist ?? track.artist;
       track.artwork = meta.artwork;
       track.artUri = meta.artUri;
+
+      tracks.add(track);
+      if (!_sourceSet) {
+        // Append before attaching, then set the playlist as the source.
+        _playlist.add(_sourceFor(track));
+        await _ensureSourceSet();
+      } else {
+        // Already attached — this performs the live platform insert.
+        await _playlist.add(_sourceFor(track));
+      }
       notifyListeners();
+    }
+    _busy = false;
+    notifyListeners();
+  }
+
+  AudioSource _sourceFor(Track track) {
+    final uri = Uri.file(track.path);
+    if (!backgroundAudioReady) return AudioSource.uri(uri);
+    return AudioSource.uri(
+      uri,
+      tag: MediaItem(
+        id: track.path,
+        title: track.title,
+        artist: track.artist ?? 'AudioRoute',
+        artUri: track.artUri,
+      ),
+    );
+  }
+
+  Future<void> _ensureSourceSet() async {
+    if (_sourceSet) return;
+    try {
+      await _player.setAudioSource(_playlist, preload: false);
+      _sourceSet = true;
+    } catch (e) {
+      debugPrint('setAudioSource(playlist) failed: $e');
     }
   }
 
@@ -84,31 +190,17 @@ class PlayerController extends ChangeNotifier {
     return name.replaceAll('_', ' ').replaceAll('-', ' ').trim();
   }
 
-  /// Start a "call" with [track] — load it and begin playback.
+  // ---- Transport -----------------------------------------------------------
+
+  /// Start a "call" with [track].
   Future<void> play(Track track) async {
+    final index = tracks.indexOf(track);
+    if (index < 0) return;
     _current = track;
     notifyListeners();
     try {
-      await _applyAttributes();
-      final uri = Uri.file(track.path);
-      try {
-        await _player.setAudioSource(
-          AudioSource.uri(
-            uri,
-            tag: MediaItem(
-              id: track.path,
-              title: track.title,
-              artist: track.artist ?? 'AudioRoute',
-              artUri: track.artUri,
-            ),
-          ),
-        );
-      } catch (e) {
-        // Background service unavailable — play without notification metadata
-        // rather than failing outright.
-        debugPrint('Tagged source failed ($e); falling back to plain source.');
-        await _player.setAudioSource(AudioSource.uri(uri));
-      }
+      await _ensureSourceSet();
+      await _player.seek(Duration.zero, index: index);
       await _player.play();
     } catch (e) {
       debugPrint('PlayerController.play failed: $e');
@@ -124,21 +216,34 @@ class PlayerController extends ChangeNotifier {
       await play(tracks.first);
       return;
     } else {
+      await _ensureSourceSet();
       await _player.play();
     }
     _updateProximity();
     notifyListeners();
   }
 
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  Future<void> skip(Duration delta) async {
-    final target = _player.position + delta;
-    final max = _player.duration ?? Duration.zero;
-    await _player.seek(target < Duration.zero
-        ? Duration.zero
-        : (target > max ? max : target));
+  Future<void> next() async {
+    if (_player.hasNext) {
+      await _player.seekToNext();
+    } else if (tracks.isNotEmpty) {
+      await _player.seek(Duration.zero, index: 0); // wrap to start
+    }
   }
+
+  Future<void> previous() async {
+    // Spotify behaviour: restart the track if we're past the first few
+    // seconds, otherwise jump to the previous one.
+    if (_player.position > const Duration(seconds: 3)) {
+      await _player.seek(Duration.zero);
+    } else if (_player.hasPrevious) {
+      await _player.seekToPrevious();
+    } else {
+      await _player.seek(Duration.zero);
+    }
+  }
+
+  Future<void> seek(Duration position) => _player.seek(position);
 
   Future<void> toggleMute() async {
     _muted = !_muted;
@@ -146,7 +251,8 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch the physical output and re-apply matching player attributes.
+  // ---- Routing -------------------------------------------------------------
+
   Future<void> setOutput(AudioOutput output) async {
     _output = output;
     await _router.applyOutput(output);
@@ -161,26 +267,32 @@ class PlayerController extends ChangeNotifier {
             : AudioOutput.earpiece,
       );
 
-  /// Tell ExoPlayer which audio "usage" to advertise. `voiceCommunication`
-  /// is what makes the OS route playback through the earpiece; `media` is
-  /// normal system audio out of the loudspeaker.
+  /// `voiceCommunication` usage routes through the earpiece; `media` is normal
+  /// loudspeaker output. Changing this can recreate the platform player, so we
+  /// restore the current position afterwards.
   Future<void> _applyAttributes() async {
+    final usage = _output == AudioOutput.earpiece
+        ? AndroidAudioUsage.voiceCommunication
+        : AndroidAudioUsage.media;
+    final index = _player.currentIndex;
+    final pos = _player.position;
+    final wasPlaying = _player.playing;
     try {
       await _player.setAndroidAudioAttributes(
         AndroidAudioAttributes(
           contentType: AndroidAudioContentType.music,
-          usage: _output == AudioOutput.earpiece
-              ? AndroidAudioUsage.voiceCommunication
-              : AndroidAudioUsage.media,
+          usage: usage,
         ),
       );
+      if (_sourceSet && index != null) {
+        await _player.seek(pos, index: index);
+        if (wasPlaying) await _player.play();
+      }
     } catch (e) {
       debugPrint('PlayerController._applyAttributes failed: $e');
     }
   }
 
-  /// Blank the screen via the proximity sensor only while we're actually
-  /// "on a call" — i.e. playing through the earpiece.
   void _updateProximity() {
     if (_player.playing && _output == AudioOutput.earpiece) {
       _router.startProximity();

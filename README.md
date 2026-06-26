@@ -34,7 +34,10 @@ ordinary system audio out the loudspeaker.
 - iOS-style **call screen**: album-art backdrop (blurred), crisp artwork
   centerpiece, live call timer, frosted-glass mute / speaker / library /
   rewind / play-hold / forward controls, and a red **End Call** button.
-- **Import** any local audio files (`file_picker`) into a "contacts" library.
+- **Import** individual audio files *or a whole folder* (`file_picker` +
+  all-files access) into a "contacts" library.
+- **Playlist transport**: previous / play-pause / next with auto-advance, and
+  Spotify-style **lock-screen + notification controls** (`just_audio_background`).
 - **Album art + artist** read from each file's embedded tags
   (`audio_metadata_reader`, pure Dart) and shown both in-app and on the media
   notification.
@@ -106,6 +109,12 @@ It's debug-signed: great for sideloading, not yet ready for Play Store upload.
 
 - `minSdk` is **26** (lets the launcher icon stay pure-XML; routing needs 31+
   for the modern API, with a legacy fallback below that).
-- The earpiece is intentionally quiet — hold the phone to your ear like a call.
+- Playback **defaults to the loudspeaker** so it's audible immediately; tap the
+  earpiece button for the "on a call" effect. The earpiece is intentionally
+  quiet (it uses the in-call volume stream) — turn the volume up while playing
+  and hold the phone to your ear. Earpiece routing is device-dependent.
+- **Folder import** needs "All files access" on Android 11+; the app will
+  prompt for it the first time a folder scan is blocked. (This permission is
+  fine for sideloading but would need justification for a Play Store listing.)
 - Ideas to extend: a swipe-up "now playing" queue, playlist persistence across
   launches, and a real signing keystore for Play Store uploads.
