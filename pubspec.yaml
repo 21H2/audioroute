@@ -20,8 +20,9 @@ dependencies:
   audio_session: ^0.1.21
   # Pick local audio files to import.
   file_picker: ^8.1.6
-  # Album art + track metadata from the device's media library.
-  on_audio_query: ^2.9.0
+  # Album art + track metadata read directly from the file (pure Dart, no
+  # native module — unlike on_audio_query it doesn't break the AGP 8 build).
+  audio_metadata_reader: ">=1.0.0 <2.0.0"
   # Temp dir for caching artwork passed to the media notification.
   path_provider: ^2.1.4
   # Material You dynamic color from the device wallpaper (Android 12+).

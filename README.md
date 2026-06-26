@@ -35,8 +35,9 @@ ordinary system audio out the loudspeaker.
   centerpiece, live call timer, frosted-glass mute / speaker / library /
   rewind / play-hold / forward controls, and a red **End Call** button.
 - **Import** any local audio files (`file_picker`) into a "contacts" library.
-- **Album art + artist** pulled from the device media library (`on_audio_query`)
-  and shown both in-app and on the media notification.
+- **Album art + artist** read from each file's embedded tags
+  (`audio_metadata_reader`, pure Dart) and shown both in-app and on the media
+  notification.
 - **Background playback** with lock-screen / notification controls
   (`just_audio_background`).
 - **Proximity screen-off**: while playing through the earpiece, holding the
@@ -106,5 +107,5 @@ It's debug-signed: great for sideloading, not yet ready for Play Store upload.
 - `minSdk` is **26** (lets the launcher icon stay pure-XML; routing needs 31+
   for the modern API, with a legacy fallback below that).
 - The earpiece is intentionally quiet — hold the phone to your ear like a call.
-- Ideas to extend: proximity-sensor screen-off (true call feel), background
-  playback via `just_audio_background`, album-art metadata via `on_audio_query`.
+- Ideas to extend: a swipe-up "now playing" queue, playlist persistence across
+  launches, and a real signing keystore for Play Store uploads.
