@@ -90,17 +90,25 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
     try {
       await _applyAttributes();
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.file(track.path),
-          tag: MediaItem(
-            id: track.path,
-            title: track.title,
-            artist: track.artist ?? 'AudioRoute',
-            artUri: track.artUri,
+      final uri = Uri.file(track.path);
+      try {
+        await _player.setAudioSource(
+          AudioSource.uri(
+            uri,
+            tag: MediaItem(
+              id: track.path,
+              title: track.title,
+              artist: track.artist ?? 'AudioRoute',
+              artUri: track.artUri,
+            ),
           ),
-        ),
-      );
+        );
+      } catch (e) {
+        // Background service unavailable — play without notification metadata
+        // rather than failing outright.
+        debugPrint('Tagged source failed ($e); falling back to plain source.');
+        await _player.setAudioSource(AudioSource.uri(uri));
+      }
       await _player.play();
     } catch (e) {
       debugPrint('PlayerController.play failed: $e');

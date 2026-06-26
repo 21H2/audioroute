@@ -10,11 +10,17 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Enables the background foreground-service + media notification controls.
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.audioroute.playback',
-    androidNotificationChannelName: 'AudioRoute playback',
-    androidNotificationOngoing: true,
-  );
+  // Guarded so a failure/hang here can never trap us on the splash screen —
+  // foreground playback still works even if background init doesn't.
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.example.audioroute.playback',
+      androidNotificationChannelName: 'AudioRoute playback',
+      androidNotificationOngoing: true,
+    ).timeout(const Duration(seconds: 8));
+  } catch (e) {
+    debugPrint('JustAudioBackground.init failed/timed out: $e');
+  }
   runApp(const AudioRouteApp());
 }
 
