@@ -330,66 +330,67 @@ class _ControlGrid extends StatelessWidget {
 
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _GlassButton(
-              palette: palette,
-              icon: controller.muted ? Icons.mic_off : Icons.mic,
-              label: controller.muted ? 'unmute' : 'mute',
-              active: controller.muted,
-              onTap: controller.toggleMute,
+        _row([
+          _GlassButton(
+            palette: palette,
+            icon: controller.muted ? Icons.mic_off : Icons.mic,
+            label: controller.muted ? 'unmute' : 'mute',
+            active: controller.muted,
+            onTap: controller.toggleMute,
+          ),
+          _GlassButton(
+            palette: palette,
+            icon: speakerOn ? Icons.volume_up : Icons.hearing,
+            label: speakerOn ? 'speaker' : 'earpiece',
+            active: speakerOn,
+            onTap: controller.toggleOutput,
+          ),
+          _GlassButton(
+            palette: palette,
+            icon: Icons.library_music,
+            label: 'library',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LibraryScreen()),
             ),
-            _GlassButton(
-              palette: palette,
-              icon: speakerOn ? Icons.volume_up : Icons.hearing,
-              label: speakerOn ? 'speaker' : 'earpiece',
-              active: speakerOn,
-              onTap: controller.toggleOutput,
-            ),
-            _GlassButton(
-              palette: palette,
-              icon: Icons.library_music,
-              label: 'library',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LibraryScreen()),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 22),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _GlassButton(
-              palette: palette,
-              icon: Icons.skip_previous,
-              label: 'previous',
-              onTap: controller.previous,
-            ),
-            StreamBuilder<PlayerState>(
-              stream: controller.playerStateStream,
-              builder: (context, snapshot) {
-                final playing = snapshot.data?.playing ?? false;
-                return _GlassButton(
-                  palette: palette,
-                  icon: playing ? Icons.pause : Icons.play_arrow,
-                  label: playing ? 'hold' : 'resume',
-                  onTap: controller.togglePlay,
-                );
-              },
-            ),
-            _GlassButton(
-              palette: palette,
-              icon: Icons.skip_next,
-              label: 'next',
-              onTap: controller.next,
-            ),
-          ],
-        ),
+          ),
+        ]),
+        const SizedBox(height: 26),
+        _row([
+          _GlassButton(
+            palette: palette,
+            icon: Icons.skip_previous,
+            label: 'previous',
+            onTap: controller.previous,
+          ),
+          StreamBuilder<PlayerState>(
+            stream: controller.playerStateStream,
+            builder: (context, snapshot) {
+              final playing = snapshot.data?.playing ?? false;
+              return _GlassButton(
+                palette: palette,
+                icon: playing ? Icons.pause : Icons.play_arrow,
+                label: playing ? 'hold' : 'resume',
+                onTap: controller.togglePlay,
+              );
+            },
+          ),
+          _GlassButton(
+            palette: palette,
+            icon: Icons.skip_next,
+            label: 'next',
+            onTap: controller.next,
+          ),
+        ]),
       ],
     );
   }
+
+  /// Three equal columns, each centering its button — matches the dialer grid.
+  Widget _row(List<Widget> items) => Row(
+        children: [
+          for (final item in items) Expanded(child: Center(child: item)),
+        ],
+      );
 }
 
 class _GlassButton extends StatelessWidget {
@@ -423,16 +424,19 @@ class _GlassButton extends StatelessWidget {
               child: InkWell(
                 onTap: onTap,
                 child: SizedBox(
-                  width: 70,
-                  height: 70,
-                  child: Icon(icon, color: iconColor, size: 28),
+                  width: 64,
+                  height: 64,
+                  child: Icon(icon, color: iconColor, size: 26),
                 ),
               ),
             ),
           ),
         ),
         const SizedBox(height: 8),
-        Text(label, style: TextStyle(color: palette.muted, fontSize: 12)),
+        Text(
+          label,
+          style: TextStyle(color: palette.muted, fontSize: 12.5),
+        ),
       ],
     );
   }
@@ -452,9 +456,9 @@ class _EndCallButton extends StatelessWidget {
       child: InkWell(
         onTap: active ? controller.endCall : null,
         child: const SizedBox(
-          width: 74,
-          height: 74,
-          child: Icon(Icons.call_end, color: Colors.white, size: 32),
+          width: 64,
+          height: 64,
+          child: Icon(Icons.call_end, color: Colors.white, size: 28),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
+import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -34,11 +35,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "routeToEarpiece" -> {
-                        routeTo(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
-                        result.success(true)
+                        result.success(routeToEarpiece())
                     }
                     "routeToSpeaker" -> {
-                        routeTo(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                        routeToSpeaker()
                         result.success(true)
                     }
                     "reset" -> {
@@ -58,22 +58,38 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun routeTo(deviceType: Int) {
+    private fun routeToEarpiece(): Boolean {
+        val am = audioManager
+        // Communication mode is what lets us force audio onto the earpiece.
+        am.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val earpiece = am.availableCommunicationDevices
+                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+            val ok = earpiece != null && am.setCommunicationDevice(earpiece)
+            Log.i("AudioRoute", "setCommunicationDevice(earpiece)=$ok")
+            if (!ok) {
+                // Fall back to the legacy flag if device selection didn't take.
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = false
+            }
+            return true
+        } else {
+            @Suppress("DEPRECATION")
+            am.isSpeakerphoneOn = false
+            return true
+        }
+    }
+
+    private fun routeToSpeaker() {
         val am = audioManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // API 31+: explicit communication-device selection.
-            am.mode = AudioManager.MODE_IN_COMMUNICATION
-            val target = am.availableCommunicationDevices
-                .firstOrNull { it.type == deviceType }
-            if (target != null) {
-                am.setCommunicationDevice(target)
-            }
+            am.clearCommunicationDevice()
         } else {
-            // Legacy: speakerphone flag toggles earpiece vs. loudspeaker.
-            am.mode = AudioManager.MODE_IN_COMMUNICATION
             @Suppress("DEPRECATION")
-            am.isSpeakerphoneOn = (deviceType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+            am.isSpeakerphoneOn = false
         }
+        // Normal mode sends ordinary media out the loudspeaker.
+        am.mode = AudioManager.MODE_NORMAL
     }
 
     private fun reset() {

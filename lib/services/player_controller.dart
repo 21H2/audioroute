@@ -200,6 +200,10 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
     try {
       await _ensureSourceSet();
+      // Re-assert routing each time a track starts; the media session / audio
+      // focus can quietly reset the audio mode between tracks.
+      await _router.applyOutput(_output);
+      await _applyAttributes();
       await _player.seek(Duration.zero, index: index);
       await _player.play();
     } catch (e) {

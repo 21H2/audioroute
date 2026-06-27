@@ -13,14 +13,13 @@ enum AudioOutput {
 
 /// Owns the platform-level audio routing.
 ///
-/// On Android this combines two things:
-///   1. A native [MethodChannel] (see `MainActivity.kt`) that flips the
-///      [AudioManager] into communication mode and selects the built-in
-///      earpiece vs. speaker as the active communication device.
-///   2. The [AudioSession] focus configuration so the OS treats us politely.
-///
-/// The matching ExoPlayer audio *attributes* (media vs. voiceCommunication
-/// usage) are set on the player itself in `PlayerController._applyAttributes`.
+/// Earpiece routing needs three things to agree:
+///   1. The [AudioSession] is configured with voice-communication attributes
+///      (so the OS treats us like a call).
+///   2. The native [MethodChannel] puts [AudioManager] into communication mode
+///      and selects the built-in earpiece as the active device.
+///   3. The just_audio player advertises voiceCommunication usage
+///      (set in `PlayerController._applyAttributes`).
 class AudioRouter {
   static const MethodChannel _channel = MethodChannel('audioroute/routing');
 
@@ -28,13 +27,12 @@ class AudioRouter {
 
   Future<void> init() async {
     _session = await AudioSession.instance;
-    // Request focus appropriate for media; the OS handles ducking/interrupts.
-    await _session!.configure(const AudioSessionConfiguration.music());
   }
 
-  /// Apply the requested physical output route.
+  /// Apply (or re-assert) the requested physical output route.
   Future<void> applyOutput(AudioOutput output) async {
     try {
+      await _configureSession(output);
       await _session?.setActive(true);
       switch (output) {
         case AudioOutput.earpiece:
@@ -43,9 +41,25 @@ class AudioRouter {
           await _channel.invokeMethod<bool>('routeToSpeaker');
       }
     } catch (e) {
-      // PlatformException on failure, or MissingPluginException before the
-      // engine attaches the channel — non-fatal either way.
       debugPrint('AudioRouter.applyOutput failed: $e');
+    }
+  }
+
+  Future<void> _configureSession(AudioOutput output) async {
+    final session = _session ??= await AudioSession.instance;
+    if (output == AudioOutput.earpiece) {
+      await session.configure(
+        const AudioSessionConfiguration(
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.voiceCommunication,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: true,
+        ),
+      );
+    } else {
+      await session.configure(const AudioSessionConfiguration.music());
     }
   }
 
