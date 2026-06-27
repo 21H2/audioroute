@@ -4,7 +4,6 @@ import 'package:audio_session/audio_session.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 
@@ -12,23 +11,21 @@ import '../models/track.dart';
 import 'audio_router.dart';
 import 'metadata_service.dart';
 
-/// Set by `main()` after attempting background-audio init. When false we add
-/// plain (untagged) sources so playback still works without the notification.
-bool backgroundAudioReady = false;
-
 const _audioExtensions = {
   '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.wma', '.aiff',
   '.aif', '.alac',
 };
 
-/// Central app state: the playlist of imported tracks, the active "call",
+/// Central app state: the library of imported tracks, the active "call",
 /// playback transport, and the chosen audio output route.
+///
+/// Playback is deliberately simple — one file at a time via [setFilePath],
+/// which is the approach that worked in the original build. Next/previous are
+/// handled manually against [tracks].
 class PlayerController extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   final AudioRouter _router = AudioRouter();
   final MetadataService _meta = MetadataService();
-
-  bool _sourceSet = false;
 
   final List<Track> tracks = <Track>[];
 
@@ -53,10 +50,9 @@ class PlayerController extends ChangeNotifier {
   Future<void> init() async {
     await _router.init();
 
-    // CRITICAL: set voice-communication attributes ONCE, before any audio
-    // source is loaded. This makes the OS treat playback like a call so
-    // setCommunicationDevice() can move it to the earpiece. Changing these
-    // later would recreate the player and drop the source mid-playback.
+    // Set voice-communication attributes ONCE, before any source loads, so the
+    // OS treats playback like a call and setCommunicationDevice() can move it
+    // to the earpiece. Changing this later would recreate the player.
     try {
       await _player.setAndroidAudioAttributes(
         const AndroidAudioAttributes(
@@ -70,18 +66,9 @@ class PlayerController extends ChangeNotifier {
 
     await setOutput(AudioOutput.speaker);
 
-    _player.currentIndexStream.listen((index) {
-      if (index != null && index >= 0 && index < tracks.length) {
-        _current = tracks[index];
-        _updateProximity();
-        notifyListeners();
-      }
-    });
-
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        _player.pause();
-        _player.seek(Duration.zero, index: 0);
+        _onCompleted();
       }
       _updateProximity();
       notifyListeners();
@@ -142,59 +129,18 @@ class PlayerController extends ChangeNotifier {
   Future<void> _addPaths(List<String> paths) async {
     _busy = true;
     notifyListeners();
-    var changed = false;
     for (final path in paths) {
       if (tracks.any((t) => t.path == path)) continue;
       final track = Track(title: _titleFromPath(path), path: path);
-
       final meta = await _meta.lookup(path);
       track.artist = meta.artist ?? track.artist;
       track.artwork = meta.artwork;
       track.artUri = meta.artUri;
-
       tracks.add(track);
-      changed = true;
+      notifyListeners();
     }
-    if (changed) await _rebuildSource();
     _busy = false;
     notifyListeners();
-  }
-
-  /// Build the whole playlist in one shot. Incrementally `.add()`-ing to a
-  /// ConcatenatingAudioSource is buggy on just_audio 0.9.x, so we always
-  /// rebuild and re-set the full source.
-  Future<void> _rebuildSource() async {
-    final sources = tracks.map(_sourceFor).toList();
-    if (sources.isEmpty) return;
-    final wasPlaying = _player.playing;
-    final keepIndex =
-        (_player.currentIndex ?? 0).clamp(0, sources.length - 1);
-    final keepPos = _player.position;
-    try {
-      await _player.setAudioSource(
-        ConcatenatingAudioSource(children: sources),
-        initialIndex: keepIndex,
-        initialPosition: keepPos,
-      );
-      _sourceSet = true;
-      if (wasPlaying) await _player.play();
-    } catch (e) {
-      debugPrint('PlayerController._rebuildSource failed: $e');
-    }
-  }
-
-  AudioSource _sourceFor(Track track) {
-    final uri = Uri.file(track.path);
-    if (!backgroundAudioReady) return AudioSource.uri(uri);
-    return AudioSource.uri(
-      uri,
-      tag: MediaItem(
-        id: track.path,
-        title: track.title,
-        artist: track.artist ?? 'AudioRoute',
-        artUri: track.artUri,
-      ),
-    );
   }
 
   String _titleFromPath(String path) {
@@ -204,14 +150,15 @@ class PlayerController extends ChangeNotifier {
 
   // ---- Transport -----------------------------------------------------------
 
+  int _indexOfCurrent() => _current == null
+      ? -1
+      : tracks.indexWhere((t) => t.path == _current!.path);
+
   Future<void> play(Track track) async {
-    final index = tracks.indexOf(track);
-    if (index < 0) return;
     _current = track;
     notifyListeners();
     try {
-      if (!_sourceSet) await _rebuildSource();
-      await _player.seek(Duration.zero, index: index);
+      await _player.setFilePath(track.path);
       await _player.play();
     } catch (e) {
       debugPrint('PlayerController.play failed: $e');
@@ -234,19 +181,30 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> next() async {
-    if (_player.hasNext) {
-      await _player.seekToNext();
-    } else if (tracks.isNotEmpty) {
-      await _player.seek(Duration.zero, index: 0);
-    }
+    if (tracks.isEmpty) return;
+    final i = _indexOfCurrent();
+    final nextIndex = i < 0 ? 0 : (i + 1) % tracks.length;
+    await play(tracks[nextIndex]);
   }
 
   Future<void> previous() async {
+    // Restart the track if we're past the first few seconds, else go back one.
     if (_player.position > const Duration(seconds: 3)) {
       await _player.seek(Duration.zero);
-    } else if (_player.hasPrevious) {
-      await _player.seekToPrevious();
+      return;
+    }
+    if (tracks.isEmpty) return;
+    final i = _indexOfCurrent();
+    final prevIndex = i <= 0 ? tracks.length - 1 : i - 1;
+    await play(tracks[prevIndex]);
+  }
+
+  Future<void> _onCompleted() async {
+    final i = _indexOfCurrent();
+    if (i >= 0 && i < tracks.length - 1) {
+      await next();
     } else {
+      await _player.pause();
       await _player.seek(Duration.zero);
     }
   }

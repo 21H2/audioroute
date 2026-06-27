@@ -1,28 +1,13 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/call_screen.dart';
 import 'services/player_controller.dart';
 import 'theme.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Enables the background foreground-service + media notification controls.
-  // Guarded so a failure/hang here can never trap us on the splash screen —
-  // foreground playback still works even if background init doesn't.
-  try {
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.example.audioroute.playback',
-      androidNotificationChannelName: 'AudioRoute playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ).timeout(const Duration(seconds: 8));
-    backgroundAudioReady = true;
-  } catch (e) {
-    debugPrint('JustAudioBackground.init failed/timed out: $e');
-  }
   runApp(const AudioRouteApp());
 }
 

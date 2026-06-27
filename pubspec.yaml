@@ -14,8 +14,6 @@ dependencies:
 
   # Local file playback (ExoPlayer under the hood, exposes Android audio attrs).
   just_audio: ^0.9.42
-  # Background playback + media notification / lock-screen controls.
-  just_audio_background: ">=0.0.1-beta.11 <0.0.2"
   # Audio focus + session configuration.
   audio_session: ^0.1.21
   # Pick local audio files to import.
