@@ -26,19 +26,19 @@ class LibraryScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Import folder',
             icon: const Icon(Icons.create_new_folder_outlined),
-            onPressed: controller.importFolder,
+            onPressed: () => _importFolder(context, controller),
           ),
           IconButton(
             tooltip: 'Import files',
             icon: const Icon(Icons.library_add_outlined),
-            onPressed: controller.importTracks,
+            onPressed: () => _importFiles(context, controller),
           ),
         ],
       ),
       body: controller.tracks.isEmpty
           ? _EmptyState(
-              onImportFiles: controller.importTracks,
-              onImportFolder: controller.importFolder,
+              onImportFiles: () => _importFiles(context, controller),
+              onImportFolder: () => _importFolder(context, controller),
             )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -73,6 +73,32 @@ class LibraryScreen extends StatelessWidget {
               },
             ),
     );
+  }
+
+  Future<void> _importFiles(
+      BuildContext context, PlayerController controller) async {
+    final added = await controller.importTracks();
+    if (context.mounted && added > 0) {
+      _snack(context, 'Added $added ${added == 1 ? 'track' : 'tracks'}');
+    }
+  }
+
+  Future<void> _importFolder(
+      BuildContext context, PlayerController controller) async {
+    final added = await controller.importFolder();
+    if (!context.mounted) return;
+    if (added == null) {
+      _snack(context,
+          "Couldn't read that folder. Grant All-files access and try again.");
+    } else if (added > 0) {
+      _snack(context, 'Added $added ${added == 1 ? 'track' : 'tracks'}');
+    }
+  }
+
+  void _snack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

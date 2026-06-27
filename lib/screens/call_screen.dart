@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,7 @@ import '../models/track.dart';
 import '../services/audio_router.dart';
 import '../services/player_controller.dart';
 import 'library_screen.dart';
+import 'onboarding_screen.dart';
 
 /// The home screen — disguised as an ongoing phone call, styled after iOS.
 class CallScreen extends StatelessWidget {
@@ -29,7 +31,18 @@ class CallScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(28, 16, 28, 20),
               child: Column(
                 children: [
-                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      tooltip: 'How it works',
+                      icon: Icon(Icons.help_outline, color: palette.muted),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OnboardingScreen(),
+                        ),
+                      ),
+                    ),
+                  ),
                   _CallerName(track: track, palette: palette),
                   const SizedBox(height: 8),
                   _StatusLine(track: track, palette: palette),
@@ -165,9 +178,8 @@ class _StatusLine extends StatelessWidget {
     // (public fields aren't promotable).
     final track = this.track;
     final controller = context.watch<PlayerController>();
-    final route = controller.output == AudioOutput.earpiece
-        ? 'earpiece'
-        : 'speaker';
+    final onEarpiece = controller.output == AudioOutput.earpiece;
+    final route = onEarpiece ? 'earpiece • hold to your ear' : 'speaker';
 
     if (track == null) {
       return Text('AudioRoute', style: TextStyle(color: palette.muted));
@@ -335,6 +347,7 @@ class _ControlGrid extends StatelessWidget {
             palette: palette,
             icon: controller.muted ? Icons.mic_off : Icons.mic,
             label: controller.muted ? 'unmute' : 'mute',
+            tooltip: 'Mute / unmute playback',
             active: controller.muted,
             onTap: controller.toggleMute,
           ),
@@ -342,6 +355,9 @@ class _ControlGrid extends StatelessWidget {
             palette: palette,
             icon: speakerOn ? Icons.volume_up : Icons.hearing,
             label: speakerOn ? 'speaker' : 'earpiece',
+            tooltip: speakerOn
+                ? 'Playing on speaker — tap for the earpiece'
+                : 'Playing on earpiece — tap for the speaker',
             active: speakerOn,
             onTap: controller.toggleOutput,
           ),
@@ -349,6 +365,7 @@ class _ControlGrid extends StatelessWidget {
             palette: palette,
             icon: Icons.library_music,
             label: 'library',
+            tooltip: 'Open your music library',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const LibraryScreen()),
             ),
@@ -360,6 +377,7 @@ class _ControlGrid extends StatelessWidget {
             palette: palette,
             icon: Icons.skip_previous,
             label: 'previous',
+            tooltip: 'Previous track',
             onTap: controller.previous,
           ),
           StreamBuilder<PlayerState>(
@@ -370,6 +388,7 @@ class _ControlGrid extends StatelessWidget {
                 palette: palette,
                 icon: playing ? Icons.pause : Icons.play_arrow,
                 label: playing ? 'hold' : 'resume',
+                tooltip: playing ? 'Pause' : 'Play',
                 onTap: controller.togglePlay,
               );
             },
@@ -378,6 +397,7 @@ class _ControlGrid extends StatelessWidget {
             palette: palette,
             icon: Icons.skip_next,
             label: 'next',
+            tooltip: 'Next track',
             onTap: controller.next,
           ),
         ]),
@@ -399,6 +419,7 @@ class _GlassButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.tooltip,
     this.active = false,
   });
 
@@ -406,32 +427,40 @@ class _GlassButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final String? tooltip;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     final fill = active ? palette.glassActive : palette.glass;
     final iconColor = active ? palette.glassActiveIcon : palette.fg;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipOval(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: Material(
-              color: fill,
-              shape: const CircleBorder(),
-              child: InkWell(
-                onTap: onTap,
-                child: SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: Icon(icon, color: iconColor, size: 26),
-                ),
-              ),
+    Widget button = ClipOval(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Material(
+          color: fill,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              onTap();
+            },
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: Icon(icon, color: iconColor, size: 26),
             ),
           ),
         ),
+      ),
+    );
+    if (tooltip != null) {
+      button = Tooltip(message: tooltip!, child: button);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button,
         const SizedBox(height: 8),
         Text(
           label,
@@ -454,7 +483,12 @@ class _EndCallButton extends StatelessWidget {
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: active ? controller.endCall : null,
+        onTap: active
+            ? () {
+                HapticFeedback.mediumImpact();
+                controller.endCall();
+              }
+            : null,
         child: const SizedBox(
           width: 64,
           height: 64,

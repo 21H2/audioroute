@@ -77,20 +77,23 @@ class PlayerController extends ChangeNotifier {
 
   // ---- Importing -----------------------------------------------------------
 
-  Future<void> importTracks() async {
+  /// Returns the number of new tracks added.
+  Future<int> importTracks() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
       allowMultiple: true,
     );
-    if (result == null) return;
+    if (result == null) return 0;
     final paths =
         result.files.map((f) => f.path).whereType<String>().toList();
-    await _addPaths(paths);
+    return _addPaths(paths);
   }
 
-  Future<void> importFolder() async {
+  /// Returns the number of new tracks added, or `null` if the folder couldn't
+  /// be read (e.g. storage permission denied).
+  Future<int?> importFolder() async {
     final dirPath = await FilePicker.platform.getDirectoryPath();
-    if (dirPath == null) return;
+    if (dirPath == null) return 0; // cancelled
 
     final dir = Directory(dirPath);
     var paths = await _scanFolder(dir);
@@ -102,9 +105,9 @@ class PlayerController extends ChangeNotifier {
     }
     if (paths == null) {
       debugPrint('importFolder: could not read $dirPath');
-      return;
+      return null;
     }
-    await _addPaths(paths);
+    return _addPaths(paths);
   }
 
   Future<List<String>?> _scanFolder(Directory dir) async {
@@ -126,9 +129,10 @@ class PlayerController extends ChangeNotifier {
   bool _isAudio(String path) =>
       _audioExtensions.contains(p.extension(path).toLowerCase());
 
-  Future<void> _addPaths(List<String> paths) async {
+  Future<int> _addPaths(List<String> paths) async {
     _busy = true;
     notifyListeners();
+    var added = 0;
     for (final path in paths) {
       if (tracks.any((t) => t.path == path)) continue;
       final track = Track(title: _titleFromPath(path), path: path);
@@ -137,10 +141,12 @@ class PlayerController extends ChangeNotifier {
       track.artwork = meta.artwork;
       track.artUri = meta.artUri;
       tracks.add(track);
+      added++;
       notifyListeners();
     }
     _busy = false;
     notifyListeners();
+    return added;
   }
 
   String _titleFromPath(String path) {

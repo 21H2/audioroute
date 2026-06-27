@@ -2,7 +2,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'screens/call_screen.dart';
+import 'screens/root_screen.dart';
 import 'services/player_controller.dart';
 import 'theme.dart';
 
@@ -55,7 +55,7 @@ class _AudioRouteAppState extends State<AudioRouteApp> {
             theme: buildTheme(lightScheme),
             darkTheme: buildTheme(darkScheme),
             themeMode: ThemeMode.system,
-            home: const CallScreen(),
+            home: const RootScreen(),
           );
         },
       ),
