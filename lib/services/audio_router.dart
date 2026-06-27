@@ -7,19 +7,16 @@ enum AudioOutput {
   /// The small front earpiece — the "on a call" experience.
   earpiece,
 
-  /// The loud bottom speaker — normal system/media audio.
+  /// The loud bottom speaker (speakerphone-style).
   speaker,
 }
 
 /// Owns the platform-level audio routing.
 ///
-/// Earpiece routing needs three things to agree:
-///   1. The [AudioSession] is configured with voice-communication attributes
-///      (so the OS treats us like a call).
-///   2. The native [MethodChannel] puts [AudioManager] into communication mode
-///      and selects the built-in earpiece as the active device.
-///   3. The just_audio player advertises voiceCommunication usage
-///      (set in `PlayerController._applyAttributes`).
+/// The player's audio attributes are set to voiceCommunication ONCE (in
+/// [PlayerController.init]) and never changed. Switching earpiece/speaker is
+/// done purely by selecting the communication device natively, so playback is
+/// never interrupted.
 class AudioRouter {
   static const MethodChannel _channel = MethodChannel('audioroute/routing');
 
@@ -27,12 +24,20 @@ class AudioRouter {
 
   Future<void> init() async {
     _session = await AudioSession.instance;
+    await _session!.configure(
+      const AudioSessionConfiguration(
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          usage: AndroidAudioUsage.voiceCommunication,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+      ),
+    );
   }
 
   /// Apply (or re-assert) the requested physical output route.
   Future<void> applyOutput(AudioOutput output) async {
     try {
-      await _configureSession(output);
       await _session?.setActive(true);
       switch (output) {
         case AudioOutput.earpiece:
@@ -42,24 +47,6 @@ class AudioRouter {
       }
     } catch (e) {
       debugPrint('AudioRouter.applyOutput failed: $e');
-    }
-  }
-
-  Future<void> _configureSession(AudioOutput output) async {
-    final session = _session ??= await AudioSession.instance;
-    if (output == AudioOutput.earpiece) {
-      await session.configure(
-        const AudioSessionConfiguration(
-          androidAudioAttributes: AndroidAudioAttributes(
-            contentType: AndroidAudioContentType.speech,
-            usage: AndroidAudioUsage.voiceCommunication,
-          ),
-          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-          androidWillPauseWhenDucked: true,
-        ),
-      );
-    } else {
-      await session.configure(const AudioSessionConfiguration.music());
     }
   }
 
@@ -73,8 +60,6 @@ class AudioRouter {
     }
   }
 
-  /// Hold a proximity wake lock so the screen blanks when the phone is at the
-  /// ear — exactly how a real phone call behaves.
   Future<void> startProximity() async {
     try {
       await _channel.invokeMethod<bool>('startProximity');

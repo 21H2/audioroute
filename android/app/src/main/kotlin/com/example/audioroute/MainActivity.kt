@@ -38,8 +38,7 @@ class MainActivity : FlutterActivity() {
                         result.success(routeToEarpiece())
                     }
                     "routeToSpeaker" -> {
-                        routeToSpeaker()
-                        result.success(true)
+                        result.success(routeToSpeaker())
                     }
                     "reset" -> {
                         reset()
@@ -60,36 +59,50 @@ class MainActivity : FlutterActivity() {
 
     private fun routeToEarpiece(): Boolean {
         val am = audioManager
-        // Communication mode is what lets us force audio onto the earpiece.
+        // Communication mode + earpiece device is the 2026-canonical recipe.
         am.mode = AudioManager.MODE_IN_COMMUNICATION
+        val ok = selectDevice(am, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE, speakerFallback = false)
+        boostVoiceVolume(am, 1.0)
+        return ok
+    }
+
+    private fun routeToSpeaker(): Boolean {
+        val am = audioManager
+        // Stay in communication mode and just move to the speaker device, so
+        // switching never requires recreating the player.
+        am.mode = AudioManager.MODE_IN_COMMUNICATION
+        val ok = selectDevice(am, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, speakerFallback = true)
+        boostVoiceVolume(am, 0.7)
+        return ok
+    }
+
+    private fun selectDevice(am: AudioManager, type: Int, speakerFallback: Boolean): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val earpiece = am.availableCommunicationDevices
-                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-            val ok = earpiece != null && am.setCommunicationDevice(earpiece)
-            Log.i("AudioRoute", "setCommunicationDevice(earpiece)=$ok")
+            val device = am.availableCommunicationDevices.firstOrNull { it.type == type }
+            val ok = device != null && am.setCommunicationDevice(device)
+            Log.i("AudioRoute", "setCommunicationDevice(type=$type)=$ok")
             if (!ok) {
-                // Fall back to the legacy flag if device selection didn't take.
                 @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = false
+                am.isSpeakerphoneOn = speakerFallback
             }
-            return true
+            return ok
         } else {
             @Suppress("DEPRECATION")
-            am.isSpeakerphoneOn = false
+            am.isSpeakerphoneOn = speakerFallback
             return true
         }
     }
 
-    private fun routeToSpeaker() {
-        val am = audioManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            am.clearCommunicationDevice()
-        } else {
-            @Suppress("DEPRECATION")
-            am.isSpeakerphoneOn = false
+    // Bump the in-call volume stream so playback is actually audible (it
+    // defaults to near-zero, which is the usual "earpiece is silent" cause).
+    private fun boostVoiceVolume(am: AudioManager, fraction: Double) {
+        try {
+            val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+            val target = (max * fraction).toInt().coerceIn(1, max)
+            am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, target, 0)
+        } catch (e: Exception) {
+            Log.w("AudioRoute", "setStreamVolume failed: ${e.message}")
         }
-        // Normal mode sends ordinary media out the loudspeaker.
-        am.mode = AudioManager.MODE_NORMAL
     }
 
     private fun reset() {

@@ -28,10 +28,6 @@ class PlayerController extends ChangeNotifier {
   final AudioRouter _router = AudioRouter();
   final MetadataService _meta = MetadataService();
 
-  /// The single playlist backing the player — enables next/previous,
-  /// auto-advance, and the lock-screen / notification controls.
-  final ConcatenatingAudioSource _playlist =
-      ConcatenatingAudioSource(children: []);
   bool _sourceSet = false;
 
   final List<Track> tracks = <Track>[];
@@ -56,8 +52,22 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> init() async {
     await _router.init();
-    // Default to the loudspeaker so playback is audible out of the box;
-    // the earpiece ("on a call") effect is one tap away.
+
+    // CRITICAL: set voice-communication attributes ONCE, before any audio
+    // source is loaded. This makes the OS treat playback like a call so
+    // setCommunicationDevice() can move it to the earpiece. Changing these
+    // later would recreate the player and drop the source mid-playback.
+    try {
+      await _player.setAndroidAudioAttributes(
+        const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          usage: AndroidAudioUsage.voiceCommunication,
+        ),
+      );
+    } catch (e) {
+      debugPrint('setAndroidAudioAttributes failed: $e');
+    }
+
     await setOutput(AudioOutput.speaker);
 
     _player.currentIndexStream.listen((index) {
@@ -70,7 +80,6 @@ class PlayerController extends ChangeNotifier {
 
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        // Reached the end of the playlist — rewind to the top and pause.
         _player.pause();
         _player.seek(Duration.zero, index: 0);
       }
@@ -81,7 +90,6 @@ class PlayerController extends ChangeNotifier {
 
   // ---- Importing -----------------------------------------------------------
 
-  /// Pick one or more individual audio files.
   Future<void> importTracks() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
@@ -93,15 +101,13 @@ class PlayerController extends ChangeNotifier {
     await _addPaths(paths);
   }
 
-  /// Pick a folder and import every audio file inside it (recursively).
   Future<void> importFolder() async {
     final dirPath = await FilePicker.platform.getDirectoryPath();
     if (dirPath == null) return;
 
     final dir = Directory(dirPath);
-    List<String>? paths = await _scanFolder(dir);
+    var paths = await _scanFolder(dir);
     if (paths == null) {
-      // Reading shared storage needs all-files access on Android 11+.
       if (Platform.isAndroid) {
         await Permission.manageExternalStorage.request();
       }
@@ -136,29 +142,45 @@ class PlayerController extends ChangeNotifier {
   Future<void> _addPaths(List<String> paths) async {
     _busy = true;
     notifyListeners();
+    var changed = false;
     for (final path in paths) {
       if (tracks.any((t) => t.path == path)) continue;
       final track = Track(title: _titleFromPath(path), path: path);
 
-      // Resolve art/artist first so the playlist + notification carry them.
       final meta = await _meta.lookup(path);
       track.artist = meta.artist ?? track.artist;
       track.artwork = meta.artwork;
       track.artUri = meta.artUri;
 
       tracks.add(track);
-      if (!_sourceSet) {
-        // Append before attaching, then set the playlist as the source.
-        _playlist.add(_sourceFor(track));
-        await _ensureSourceSet();
-      } else {
-        // Already attached — this performs the live platform insert.
-        await _playlist.add(_sourceFor(track));
-      }
-      notifyListeners();
+      changed = true;
     }
+    if (changed) await _rebuildSource();
     _busy = false;
     notifyListeners();
+  }
+
+  /// Build the whole playlist in one shot. Incrementally `.add()`-ing to a
+  /// ConcatenatingAudioSource is buggy on just_audio 0.9.x, so we always
+  /// rebuild and re-set the full source.
+  Future<void> _rebuildSource() async {
+    final sources = tracks.map(_sourceFor).toList();
+    if (sources.isEmpty) return;
+    final wasPlaying = _player.playing;
+    final keepIndex =
+        (_player.currentIndex ?? 0).clamp(0, sources.length - 1);
+    final keepPos = _player.position;
+    try {
+      await _player.setAudioSource(
+        ConcatenatingAudioSource(children: sources),
+        initialIndex: keepIndex,
+        initialPosition: keepPos,
+      );
+      _sourceSet = true;
+      if (wasPlaying) await _player.play();
+    } catch (e) {
+      debugPrint('PlayerController._rebuildSource failed: $e');
+    }
   }
 
   AudioSource _sourceFor(Track track) {
@@ -175,16 +197,6 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
-  Future<void> _ensureSourceSet() async {
-    if (_sourceSet) return;
-    try {
-      await _player.setAudioSource(_playlist, preload: false);
-      _sourceSet = true;
-    } catch (e) {
-      debugPrint('setAudioSource(playlist) failed: $e');
-    }
-  }
-
   String _titleFromPath(String path) {
     final name = p.basenameWithoutExtension(path);
     return name.replaceAll('_', ' ').replaceAll('-', ' ').trim();
@@ -192,14 +204,13 @@ class PlayerController extends ChangeNotifier {
 
   // ---- Transport -----------------------------------------------------------
 
-  /// Start a "call" with [track].
   Future<void> play(Track track) async {
     final index = tracks.indexOf(track);
     if (index < 0) return;
     _current = track;
     notifyListeners();
     try {
-      await _ensureSourceSet();
+      if (!_sourceSet) await _rebuildSource();
       await _player.seek(Duration.zero, index: index);
       await _player.play();
     } catch (e) {
@@ -216,7 +227,6 @@ class PlayerController extends ChangeNotifier {
       await play(tracks.first);
       return;
     } else {
-      await _ensureSourceSet();
       await _player.play();
     }
     _updateProximity();
@@ -227,13 +237,11 @@ class PlayerController extends ChangeNotifier {
     if (_player.hasNext) {
       await _player.seekToNext();
     } else if (tracks.isNotEmpty) {
-      await _player.seek(Duration.zero, index: 0); // wrap to start
+      await _player.seek(Duration.zero, index: 0);
     }
   }
 
   Future<void> previous() async {
-    // Spotify behaviour: restart the track if we're past the first few
-    // seconds, otherwise jump to the previous one.
     if (_player.position > const Duration(seconds: 3)) {
       await _player.seek(Duration.zero);
     } else if (_player.hasPrevious) {
@@ -253,10 +261,11 @@ class PlayerController extends ChangeNotifier {
 
   // ---- Routing -------------------------------------------------------------
 
+  /// Switch the physical output. Audio attributes stay constant — only the
+  /// communication device changes — so playback is never interrupted.
   Future<void> setOutput(AudioOutput output) async {
     _output = output;
     await _router.applyOutput(output);
-    await _applyAttributes();
     _updateProximity();
     notifyListeners();
   }
@@ -266,32 +275,6 @@ class PlayerController extends ChangeNotifier {
             ? AudioOutput.speaker
             : AudioOutput.earpiece,
       );
-
-  /// `voiceCommunication` usage routes through the earpiece; `media` is normal
-  /// loudspeaker output. Changing this can recreate the platform player, so we
-  /// restore the current position afterwards.
-  Future<void> _applyAttributes() async {
-    final usage = _output == AudioOutput.earpiece
-        ? AndroidAudioUsage.voiceCommunication
-        : AndroidAudioUsage.media;
-    final index = _player.currentIndex;
-    final pos = _player.position;
-    final wasPlaying = _player.playing;
-    try {
-      await _player.setAndroidAudioAttributes(
-        AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          usage: usage,
-        ),
-      );
-      if (_sourceSet && index != null) {
-        await _player.seek(pos, index: index);
-        if (wasPlaying) await _player.play();
-      }
-    } catch (e) {
-      debugPrint('PlayerController._applyAttributes failed: $e');
-    }
-  }
 
   void _updateProximity() {
     if (_player.playing && _output == AudioOutput.earpiece) {
