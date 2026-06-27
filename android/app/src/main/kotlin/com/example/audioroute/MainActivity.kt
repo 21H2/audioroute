@@ -1,11 +1,13 @@
 package com.example.audioroute
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -55,6 +57,49 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        val mediaChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "audioroute/media")
+        MediaService.dartChannel = mediaChannel
+        mediaChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "show" -> {
+                    showMedia(call.arguments as? Map<*, *>)
+                    result.success(true)
+                }
+                "hide" -> {
+                    hideMedia()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun showMedia(args: Map<*, *>?) {
+        if (args == null) return
+        try {
+            val intent = Intent(this, MediaService::class.java).apply {
+                action = MediaService.ACTION_UPDATE
+                putExtra(MediaService.EXTRA_TITLE, args["title"] as? String)
+                putExtra(MediaService.EXTRA_ARTIST, args["artist"] as? String)
+                putExtra(MediaService.EXTRA_PLAYING, (args["isPlaying"] as? Boolean) ?: false)
+                putExtra(MediaService.EXTRA_HAS_NEXT, (args["hasNext"] as? Boolean) ?: false)
+                putExtra(MediaService.EXTRA_HAS_PREV, (args["hasPrevious"] as? Boolean) ?: false)
+                putExtra(MediaService.EXTRA_ART, args["artPath"] as? String)
+            }
+            ContextCompat.startForegroundService(this, intent)
+        } catch (e: Exception) {
+            Log.e("AudioRoute", "showMedia failed: ${e.message}")
+        }
+    }
+
+    private fun hideMedia() {
+        try {
+            stopService(Intent(this, MediaService::class.java))
+        } catch (e: Exception) {
+            Log.e("AudioRoute", "hideMedia failed: ${e.message}")
+        }
     }
 
     private fun routeToEarpiece(): Boolean {
@@ -141,6 +186,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         stopProximity()
+        MediaService.dartChannel = null
         super.onDestroy()
     }
 }

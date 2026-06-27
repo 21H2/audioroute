@@ -47,9 +47,16 @@ class CallScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   _StatusLine(track: track, palette: palette),
                   const Spacer(),
-                  _Artwork(track: track, palette: palette),
+                  _Artwork(
+                    track: track,
+                    palette: palette,
+                    playing: controller.playing,
+                  ),
                   const Spacer(),
-                  if (track != null) _Scrubber(palette: palette),
+                  if (track != null)
+                    _Scrubber(palette: palette)
+                  else
+                    _ChooseMusicButton(palette: palette),
                   const SizedBox(height: 20),
                   _ControlGrid(palette: palette),
                   const SizedBox(height: 28),
@@ -134,12 +141,30 @@ class _Backdrop extends StatelessWidget {
         ],
       );
     }
+    // No artwork: a richer Material You gradient with a soft radial glow.
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [scheme.surfaceContainerHighest, scheme.surface],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primaryContainer.withValues(alpha: 0.55),
+            scheme.surface,
+            scheme.tertiaryContainer.withValues(alpha: 0.45),
+          ],
+          stops: const [0.0, 0.55, 1.0],
+        ),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.55),
+            radius: 1.1,
+            colors: [
+              scheme.primary.withValues(alpha: 0.14),
+              Colors.transparent,
+            ],
+          ),
         ),
       ),
     );
@@ -154,7 +179,7 @@ class _CallerName extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      track?.title ?? 'No active call',
+      track?.title ?? 'AudioRoute',
       textAlign: TextAlign.center,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
@@ -163,6 +188,32 @@ class _CallerName extends StatelessWidget {
             fontWeight: FontWeight.w600,
             letterSpacing: -0.5,
           ),
+    );
+  }
+}
+
+/// Shown in place of the scrubber when nothing is playing.
+class _ChooseMusicButton extends StatelessWidget {
+  const _ChooseMusicButton({required this.palette});
+  final _CallPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: FilledButton.tonalIcon(
+        onPressed: () {
+          HapticFeedback.lightImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const LibraryScreen()),
+          );
+        },
+        icon: const Icon(Icons.library_music),
+        label: const Text('Choose music'),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        ),
+      ),
     );
   }
 }
@@ -182,7 +233,10 @@ class _StatusLine extends StatelessWidget {
     final route = onEarpiece ? 'earpiece • hold to your ear' : 'speaker';
 
     if (track == null) {
-      return Text('AudioRoute', style: TextStyle(color: palette.muted));
+      return Text(
+        'Pick a song to start the call',
+        style: TextStyle(color: palette.muted),
+      );
     }
 
     return StreamBuilder<Duration>(
@@ -216,15 +270,40 @@ class _StatusLine extends StatelessWidget {
   }
 }
 
-class _Artwork extends StatelessWidget {
-  const _Artwork({required this.track, required this.palette});
+class _Artwork extends StatefulWidget {
+  const _Artwork({
+    required this.track,
+    required this.palette,
+    required this.playing,
+  });
   final Track? track;
   final _CallPalette palette;
+  final bool playing;
+
+  @override
+  State<_Artwork> createState() => _ArtworkState();
+}
+
+class _ArtworkState extends State<_Artwork>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     const size = 232.0;
+    final isArt = widget.track?.artwork != null;
+    final radius = isArt ? 32.0 : size / 2;
+
     final shadow = [
       BoxShadow(
         color: Colors.black.withValues(alpha: 0.35),
@@ -234,40 +313,66 @@ class _Artwork extends StatelessWidget {
       ),
     ];
 
-    if (track?.artwork != null) {
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
-          boxShadow: shadow,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: Image.memory(
-            track!.artwork!,
+    final Widget art = isArt
+        ? Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              boxShadow: shadow,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: Image.memory(
+                widget.track!.artwork!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+              ),
+            ),
+          )
+        : Container(
             width: size,
             height: size,
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [scheme.primaryContainer, scheme.tertiaryContainer],
+              ),
+              boxShadow: shadow,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              widget.track == null ? Icons.music_note : Icons.graphic_eq,
+              size: 80,
+              color: scheme.onPrimaryContainer,
+            ),
+          );
 
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: scheme.primaryContainer,
-        boxShadow: shadow,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        track?.initial ?? '♪',
-        style: TextStyle(
-          fontSize: 84,
-          fontWeight: FontWeight.w600,
-          color: scheme.onPrimaryContainer,
-        ),
+    return SizedBox(
+      width: size + 64,
+      height: size + 64,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Breathing glow ring while playing.
+          if (widget.playing)
+            AnimatedBuilder(
+              animation: _pulse,
+              builder: (context, _) {
+                final v = Curves.easeInOut.transform(_pulse.value);
+                return Container(
+                  width: size + 16 + v * 44,
+                  height: size + 16 + v * 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius + 16 + v * 22),
+                    color: scheme.primary.withValues(alpha: (1 - v) * 0.18),
+                  ),
+                );
+              },
+            ),
+          art,
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/track.dart';
 import 'audio_router.dart';
+import 'media_notification.dart';
 import 'metadata_service.dart';
 
 const _audioExtensions = {
@@ -26,6 +27,7 @@ class PlayerController extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   final AudioRouter _router = AudioRouter();
   final MetadataService _meta = MetadataService();
+  final MediaNotification _media = MediaNotification();
 
   final List<Track> tracks = <Track>[];
 
@@ -50,6 +52,12 @@ class PlayerController extends ChangeNotifier {
   Future<void> init() async {
     await _router.init();
 
+    // Lock-screen controls (best-effort; never affects playback).
+    _media.onAction = _onMediaAction;
+    try {
+      await Permission.notification.request();
+    } catch (_) {}
+
     // Set voice-communication attributes ONCE, before any source loads, so the
     // OS treats playback like a call and setCommunicationDevice() can move it
     // to the earpiece. Changing this later would recreate the player.
@@ -71,8 +79,39 @@ class PlayerController extends ChangeNotifier {
         _onCompleted();
       }
       _updateProximity();
+      _syncNotification();
       notifyListeners();
     });
+  }
+
+  void _onMediaAction(String action) {
+    switch (action) {
+      case 'play':
+      case 'pause':
+        togglePlay();
+      case 'next':
+        next();
+      case 'previous':
+        previous();
+      case 'stop':
+        endCall();
+    }
+  }
+
+  void _syncNotification() {
+    final track = _current;
+    if (track == null) {
+      _media.hide();
+      return;
+    }
+    _media.show(
+      title: track.title,
+      artist: track.artist ?? 'AudioRoute',
+      isPlaying: _player.playing,
+      hasNext: tracks.length > 1,
+      hasPrevious: tracks.length > 1,
+      artPath: track.artUri?.toFilePath(),
+    );
   }
 
   // ---- Importing -----------------------------------------------------------
@@ -254,6 +293,7 @@ class PlayerController extends ChangeNotifier {
     await _router.stopProximity();
     await _router.reset();
     _current = null;
+    _media.hide();
     notifyListeners();
   }
 
